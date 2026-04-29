@@ -1,0 +1,1 @@
+# Las "skills" (funciones SQL)

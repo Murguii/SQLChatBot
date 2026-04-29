@@ -25,7 +25,7 @@ This project implements several advanced patterns discussed during the course:
 1.  **Natural Language to SQL:** Converts user intent into precise SQL queries.
 2.  **Autonomous Self-Correction:** Detects SQL syntax or schema errors and iterates until a valid query is produced.
 3.  **Smart Follow-up Suggestions:** After each answer, a dedicated analyst agent suggests 2-3 relevant questions to help the user explore the data further.
-4.  **Visual Insights:** Capability to generate and send charts directly to the Telegram chat (using Matplotlib/Seaborn).
+
 
 ## 🏗️ Architecture
 The system follows a cyclic graph logic:
