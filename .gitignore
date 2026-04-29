@@ -1,0 +1,24 @@
+# Entorno Virtual
+venv/
+.venv/
+env/
+
+# Variables de entorno
+.env
+
+# Base de datos local
+data/*.sqlite
+data/*.db
+
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDEs
+.vscode/
+.idea/
+
+# Logs y trazas
+*.log
+.langfuse/
