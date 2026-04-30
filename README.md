@@ -103,7 +103,7 @@ La integración con **Langfuse** permite:
 <p align="center"><img src="./assets/telegram_demo2.jpeg" width="400" alt="Interaccion en Telegram (Demo) - 2"></p>
 <p align="center"><em>Interaccion en Telegram (Demo) - 2</em></p>
 
-<p align="center"><img src="./assets/graph_structure.png" width="700" alt="Visualizacion del Grafo de Estados (LangGraph)"></p>
+<p align="center"><img src="./assets/graph_structure.png" width="400" alt="Visualizacion del Grafo de Estados (LangGraph)"></p>
 <p align="center"><em>Visualizacion del Grafo de Estados (LangGraph)</em></p>
 
 <p align="center"><img src="./assets/langfuse_trace.png" width="700" alt="Traza de observabilidad (Langfuse)"></p>
