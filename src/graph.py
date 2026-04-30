@@ -69,8 +69,13 @@ def _build_analyst_prompt(question: str, db_result: Union[pd.DataFrame, str]) ->
 	return "\n".join(
 		[
 			"You are a data analyst.",
-			"Answer the user based on the data provided.",
-			"Focus on accuracy and clarity.",
+			"Golden rule: If a fact or value is not in db_result, it does not exist.",
+			"Do not use external knowledge or invented examples.",
+			"Do not mention bands, dates, or statistics that are not present in db_result.",
+			"If the data is missing, say it is not available in the data.",
+			"Answer briefly and naturally in the user's language.",
+			"Format: one short sentence, no bullet points.",
+			"Example: 'El genero mas vendido es el Rock con un total de 12.9 EUR'.",
 			"",
 			f"Question: {question}",
 			"",
@@ -80,19 +85,34 @@ def _build_analyst_prompt(question: str, db_result: Union[pd.DataFrame, str]) ->
 	)
 
 
-def _build_suggestions_prompt(question: str, db_result: Union[pd.DataFrame, str]) -> str:
+def _build_suggestions_prompt(
+	question: str,
+	db_result: Union[pd.DataFrame, str],
+	schema: Optional[Dict[str, List[str]]],
+) -> str:
 	if isinstance(db_result, pd.DataFrame):
 		data_preview = db_result.head(50).to_markdown(index=False)
 	else:
 		data_preview = str(db_result)
 
+	if schema:
+		schema_lines = [f"- {table}({', '.join(columns)})" for table, columns in schema.items()]
+	else:
+		schema_lines = ["(schema unavailable)"]
+
 	return "\n".join(
 		[
 			"You are a proactive data analyst.",
-			"Based on the question and data, propose exactly 2 follow-up questions.",
+			"Propose exactly 2 follow-up questions.",
+			"Use only the available tables in the schema and the data shown.",
+			"Do not invent facts or mention tables that are not listed.",
+			"Avoid regional analysis unless there is a region-related table.",
 			"Return them as a simple list, one per line.",
 			"",
 			f"Question: {question}",
+			"",
+			"Database schema:",
+			*schema_lines,
 			"",
 			"Data:",
 			data_preview,
@@ -114,6 +134,21 @@ def _parse_suggestions(raw_text: str) -> List[str]:
 	if raw_text.strip():
 		return [raw_text.strip()][:2]
 	return []
+
+
+def _format_suggestions(suggestions: List[str]) -> List[str]:
+	formatted: List[str] = []
+	for suggestion in suggestions:
+		cleaned = suggestion.strip()
+		if not cleaned:
+			continue
+		if cleaned.lower().startswith("sugerencia:"):
+			formatted.append(cleaned)
+		else:
+			formatted.append(f"Sugerencia: {cleaned}")
+	if len(formatted) >= 2:
+		return formatted[:2]
+	return formatted
 
 
 def build_graph(
@@ -159,12 +194,14 @@ def build_graph(
 		else:
 			prompt = _build_analyst_prompt(question, state.get("db_result", ""))
 			answer = _call_agent(analyst_agent, prompt)
-
+			schema = get_schema(db_path)
+			if isinstance(schema, str):
+				schema = None
 			suggestions_prompt = _build_suggestions_prompt(
-				question, state.get("db_result", "")
+				question, state.get("db_result", ""), schema
 			)
 			suggestions_raw = _call_agent(analyst_agent, suggestions_prompt)
-			suggestions = _parse_suggestions(suggestions_raw)
+			suggestions = _format_suggestions(_parse_suggestions(suggestions_raw))
 
 		messages = list(state.get("messages", []))
 		messages.append({"role": "assistant", "content": answer})

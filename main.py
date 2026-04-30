@@ -220,7 +220,7 @@ def main() -> None:
 			)
 			print(messages[-1]["content"])
 			if suggestions:
-				print("Sugerencias: " + " | ".join(suggestions))
+				print(" | ".join(suggestions))
 	finally:
 		if langfuse is not None:
 			try:
