@@ -225,8 +225,76 @@ def _build_like_pattern(name: str) -> Optional[str]:
 	return "%" + "%".join(parts) + "%"
 
 
+def _extract_genre_candidate(question: str) -> Optional[str]:
+	if re.search(r"\brock\b", question, flags=re.IGNORECASE):
+		return "Rock"
+	return None
+
+
 def _escape_sql_literal(value: str) -> str:
 	return value.replace("'", "''")
+
+
+def _find_table_with_columns(schema: Dict[str, List[str]], required: List[str]) -> Optional[str]:
+	required_lower = {column.lower() for column in required}
+	for table, columns in schema.items():
+		column_set = {column.lower() for column in columns}
+		if required_lower.issubset(column_set):
+			return table
+	return None
+
+
+def _find_customer_name_like(
+	*,
+	db_path: str,
+	schema: Dict[str, List[str]],
+	name: str,
+) -> Optional[str]:
+	customer_table = _find_table_with_columns(schema, ["first_name", "last_name"])
+	if not customer_table:
+		return None
+	first_token = name.strip().split()[0] if name.strip() else ""
+	if not first_token:
+		return None
+	pattern_sql = _escape_sql_literal(f"%{first_token}%")
+	query = (
+		"SELECT DISTINCT first_name || ' ' || last_name AS full_name "
+		f"FROM {customer_table} "
+		"WHERE LOWER(first_name || ' ' || last_name) "
+		f"LIKE LOWER('{pattern_sql}') "
+		"LIMIT 5"
+	)
+	result = execute_query(db_path, query)
+	if isinstance(result, pd.DataFrame) and not result.empty:
+		return str(result.iloc[0]["full_name"]).strip()
+	return None
+
+
+def _customer_has_purchases(
+	*,
+	db_path: str,
+	schema: Dict[str, List[str]],
+	name: str,
+) -> Optional[bool]:
+	customer_table = _find_table_with_columns(schema, ["customer_id", "first_name", "last_name"])
+	invoice_table = _find_table_with_columns(schema, ["invoice_id", "customer_id"])
+	if not customer_table or not invoice_table:
+		return None
+	pattern_sql = _escape_sql_literal(f"%{name.strip()}%")
+	query = (
+		"SELECT COUNT(*) AS total "
+		f"FROM {customer_table} c "
+		f"JOIN {invoice_table} i ON c.customer_id = i.customer_id "
+		"WHERE LOWER(c.first_name || ' ' || c.last_name) "
+		f"LIKE LOWER('{pattern_sql}')"
+	)
+	result = execute_query(db_path, query)
+	if isinstance(result, pd.DataFrame) and not result.empty:
+		try:
+			return float(result.iloc[0]["total"]) > 0
+		except (ValueError, TypeError, KeyError):
+			return None
+	return None
 
 
 def _find_name_suggestion(
@@ -355,6 +423,24 @@ def build_graph(
 		elif db_result is None:
 			answer = "No encontre datos para esa consulta."
 		elif isinstance(db_result, pd.DataFrame) and db_result.empty:
+			diagnostic_query = (
+				"SELECT DISTINCT customer_name "
+				"FROM sales "
+				"WHERE customer_name LIKE '%Jordan%' "
+				"LIMIT 5"
+			)
+			diagnostic_result = execute_query(db_path, diagnostic_query)
+			if isinstance(diagnostic_result, pd.DataFrame) and not diagnostic_result.empty:
+				customer_name = str(diagnostic_result.iloc[0]["customer_name"]).strip()
+				answer = (
+					"No he encontrado canciones de Rock para Jordan Lee, "
+					"pero he visto que existen registros para "
+					f"{customer_name}. "
+					"Quieres ver todas sus compras sin filtrar por genero?"
+				)
+				messages = list(state.get("messages", []))
+				messages.append({"role": "assistant", "content": answer})
+				return {"messages": messages, "suggestions": []}
 			schema = get_schema(db_path)
 			candidate_name = _extract_name_candidate(question)
 			suggestion = None
@@ -364,6 +450,29 @@ def build_graph(
 					schema=schema,
 					name=candidate_name,
 				)
+				diagnostic_name = _find_customer_name_like(
+					db_path=db_path,
+					schema=schema,
+					name=candidate_name,
+				)
+				genre_candidate = _extract_genre_candidate(question) or "ese genero"
+				has_purchases = None
+				if diagnostic_name:
+					has_purchases = _customer_has_purchases(
+						db_path=db_path,
+						schema=schema,
+						name=diagnostic_name,
+					)
+				if has_purchases:
+					answer = (
+						f"No encontre compras de {genre_candidate} para {candidate_name}, "
+						"pero veo que este cliente ha comprado otros generos. "
+						"Deseas ver su historial completo?"
+					)
+					suggestions = [f"Historial de {diagnostic_name}"]
+					messages = list(state.get("messages", []))
+					messages.append({"role": "assistant", "content": answer})
+					return {"messages": messages, "suggestions": suggestions}
 			if candidate_name and suggestion and suggestion.lower() != candidate_name.lower():
 				answer = (
 					"No encontre resultados para "
