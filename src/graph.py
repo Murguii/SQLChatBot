@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ast
+import re
 from typing import Any, Callable, Dict, List, Optional, TypedDict, Union
 
 import pandas as pd
@@ -74,6 +76,8 @@ def _build_analyst_prompt(question: str, db_result: Union[pd.DataFrame, str]) ->
 			"Do not mention bands, dates, or statistics that are not present in db_result.",
 			"If the data is missing, say it is not available in the data.",
 			"Answer briefly and naturally in the user's language.",
+			"Your response must contain ONLY the answer to the user's question.",
+			"Do not append follow-up questions or extra sections at the end.",
 			"Format: one short sentence, no bullet points.",
 			"Example: 'El genero mas vendido es el Rock con un total de 12.9 EUR'.",
 			"",
@@ -104,10 +108,12 @@ def _build_suggestions_prompt(
 		[
 			"You are a proactive data analyst.",
 			"Propose exactly 2 follow-up questions.",
+			"Each suggestion must be 3 to 4 words (no truncation).",
+			"Do not include answers, numbers, or data from the results.",
 			"Use only the available tables in the schema and the data shown.",
 			"Do not invent facts or mention tables that are not listed.",
 			"Avoid regional analysis unless there is a region-related table.",
-			"Return them as a simple list, one per line.",
+			"Return them as a Python list literal of two strings (e.g., ['Ventas por artista', 'Lista de generos']).",
 			"",
 			f"Question: {question}",
 			"",
@@ -121,6 +127,15 @@ def _build_suggestions_prompt(
 
 
 def _parse_suggestions(raw_text: str) -> List[str]:
+	match = re.search(r"\[[\s\S]*\]", raw_text)
+	if match:
+		try:
+			parsed = ast.literal_eval(match.group(0))
+			if isinstance(parsed, list):
+				return [str(item).strip() for item in parsed if str(item).strip()]
+		except (ValueError, SyntaxError):
+			pass
+
 	lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
 	suggestions: List[str] = []
 	for line in lines:
@@ -129,26 +144,33 @@ def _parse_suggestions(raw_text: str) -> List[str]:
 			cleaned = cleaned[3:].strip()
 		if cleaned:
 			suggestions.append(cleaned)
-	if len(suggestions) >= 2:
-		return suggestions[:2]
 	if raw_text.strip():
-		return [raw_text.strip()][:2]
-	return []
+		return suggestions[:2] if suggestions else [raw_text.strip()][:2]
+	return suggestions
 
 
-def _format_suggestions(suggestions: List[str]) -> List[str]:
-	formatted: List[str] = []
+def _clean_suggestions(suggestions: List[str]) -> List[str]:
+	cleaned_list: List[str] = []
 	for suggestion in suggestions:
 		cleaned = suggestion.strip()
 		if not cleaned:
 			continue
 		if cleaned.lower().startswith("sugerencia:"):
-			formatted.append(cleaned)
-		else:
-			formatted.append(f"Sugerencia: {cleaned}")
-	if len(formatted) >= 2:
-		return formatted[:2]
-	return formatted
+			cleaned = cleaned.split(":", 1)[-1].strip()
+		if cleaned:
+			cleaned_list.append(cleaned)
+
+	filtered: List[str] = []
+	for suggestion in cleaned_list:
+		word_count = len(suggestion.split())
+		if 3 <= word_count <= 4:
+			filtered.append(suggestion)
+		if len(filtered) >= 2:
+			return filtered[:2]
+
+	if len(cleaned_list) >= 2:
+		return cleaned_list[:2]
+	return cleaned_list
 
 
 def build_graph(
@@ -186,22 +208,25 @@ def build_graph(
 	def analyst(state: AgentState) -> Dict[str, Any]:
 		question = _extract_latest_question(state.get("messages", []))
 		suggestions: List[str] = []
+		db_result = state.get("db_result")
 		if state.get("error"):
 			answer = (
 				"I could not execute a valid SQL query after multiple attempts. "
 				f"Error: {state['error']}"
 			)
+		elif db_result is None:
+			answer = "No hay datos disponibles en el resultado."
+		elif isinstance(db_result, pd.DataFrame) and db_result.empty:
+			answer = "No hay datos disponibles en el resultado."
 		else:
-			prompt = _build_analyst_prompt(question, state.get("db_result", ""))
+			prompt = _build_analyst_prompt(question, db_result)
 			answer = _call_agent(analyst_agent, prompt)
 			schema = get_schema(db_path)
 			if isinstance(schema, str):
 				schema = None
-			suggestions_prompt = _build_suggestions_prompt(
-				question, state.get("db_result", ""), schema
-			)
+			suggestions_prompt = _build_suggestions_prompt(question, db_result, schema)
 			suggestions_raw = _call_agent(analyst_agent, suggestions_prompt)
-			suggestions = _format_suggestions(_parse_suggestions(suggestions_raw))
+			suggestions = _clean_suggestions(_parse_suggestions(suggestions_raw))
 
 		messages = list(state.get("messages", []))
 		messages.append({"role": "assistant", "content": answer})

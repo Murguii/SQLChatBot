@@ -4,3 +4,4 @@ openai
 langfuse
 pandas
 tabulate
+python-telegram-bot

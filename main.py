@@ -190,7 +190,7 @@ def main() -> None:
 		langfuse=langfuse,
 	)
 	analyst_agent = _build_openrouter_agent(
-		"You are a data analyst. Answer the user and provide 3 follow-up questions.",
+		"You are a data analyst. Answer the user concisely.",
 		name="analyst",
 		langfuse=langfuse,
 	)
@@ -220,7 +220,7 @@ def main() -> None:
 			)
 			print(messages[-1]["content"])
 			if suggestions:
-				print(" | ".join(suggestions))
+				print("Sugerencias: " + " | ".join(suggestions))
 	finally:
 		if langfuse is not None:
 			try:
