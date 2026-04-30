@@ -97,10 +97,17 @@ La integración con **Langfuse** permite:
 ---
 
 ## 🖼️ Recursos visuales
-![Interacción en Telegram (Demo)](./assets/telegram_demo1.jpeg)
-![Interacción en Telegram (Demo)](./assets/telegram_demo2.jpeg)
-![Visualización del Grafo de Estados (LangGraph)](./assets/graph_structure.png)
-![Traza de observabilidad (Langfuse)](./assets/langfuse_trace.png)
+<p align="center"><img src="./assets/telegram_demo1.jpeg" width="400" alt="Interaccion en Telegram (Demo) - 1"></p>
+Interaccion en Telegram (Demo) - 1
+
+<p align="center"><img src="./assets/telegram_demo2.jpeg" width="400" alt="Interaccion en Telegram (Demo) - 2"></p>
+Interaccion en Telegram (Demo) - 2
+
+<p align="center"><img src="./assets/graph_structure.png" width="800" alt="Visualizacion del Grafo de Estados (LangGraph)"></p>
+Visualizacion del Grafo de Estados (LangGraph)
+
+<p align="center"><img src="./assets/langfuse_trace.png" width="700" alt="Traza de observabilidad (Langfuse)"></p>
+Traza de observabilidad (Langfuse)
 
 ## 🧾 Ejemplos de consultas
 
