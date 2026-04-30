@@ -190,6 +190,10 @@ async def _handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 	if update.message is None or update.message.text is None:
 		return
 
+	text = update.message.text.strip()
+	user_name = update.effective_user.first_name if update.effective_user else "Desconocido"
+	print(f"Mensaje de {user_name}: {text}")
+
 	user_id = update.effective_user.id if update.effective_user else "unknown"
 	user_messages = context.user_data.get("messages", [])
 	graph = context.application.bot_data["graph"]
@@ -199,7 +203,7 @@ async def _handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 		_run_turn,
 		graph=graph,
 		messages=user_messages,
-		user_input=update.message.text.strip(),
+		user_input=text,
 		langfuse=langfuse,
 		session_id=str(user_id),
 	)

@@ -192,6 +192,7 @@ def build_graph(
 		question = _extract_latest_question(state.get("messages", []))
 		prompt = _build_sql_prompt(question, schema, state.get("error"))
 		sql_query = _clean_sql(_call_agent(sql_agent, prompt))
+		print(f"--- SQL GENERADO: {sql_query} ---")
 		return {"sql_query": sql_query, "error": None}
 
 	def execute_sql(state: AgentState) -> Dict[str, Any]:
@@ -227,6 +228,7 @@ def build_graph(
 			suggestions_prompt = _build_suggestions_prompt(question, db_result, schema)
 			suggestions_raw = _call_agent(analyst_agent, suggestions_prompt)
 			suggestions = _clean_suggestions(_parse_suggestions(suggestions_raw))
+			print(f"Sugerencias generadas: {suggestions}")
 
 		messages = list(state.get("messages", []))
 		messages.append({"role": "assistant", "content": answer})
