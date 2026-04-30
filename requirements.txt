@@ -1,1 +1,6 @@
 # Librerías a instalar
+langgraph
+openai
+langfuse
+pandas
+tabulate
