@@ -76,6 +76,14 @@ def _build_analyst_prompt(question: str, db_result: Union[pd.DataFrame, str]) ->
 			"Do not mention bands, dates, or statistics that are not present in db_result.",
 			"If the data is missing, say it is not available in the data.",
 			"Answer briefly and naturally in the user's language.",
+			"Priority rules:",
+			"1) If the database result is 0 or empty, FIRST check for a misspelled search term.",
+			"2) If there is a misspelling, do NOT mention the 0. Respond only: "
+			"'No encontre resultados para [error]. Es posible que te refieras a [correcto]. "
+			"Tienes opciones debajo para consultar su informacion.'",
+			"3) If the term is correct and the result is 0, then say it is 0.",
+			"Do not ask open questions or request confirmation.",
+			"Do not assume results apply to the corrected term.",
 			"Your response must contain ONLY the answer to the user's question.",
 			"Do not append follow-up questions or extra sections at the end.",
 			"Format: one short sentence, no bullet points.",
@@ -173,6 +181,92 @@ def _clean_suggestions(suggestions: List[str]) -> List[str]:
 	return cleaned_list
 
 
+def _is_zero_result(db_result: Union[pd.DataFrame, str]) -> bool:
+	if not isinstance(db_result, pd.DataFrame):
+		return False
+	if db_result.empty:
+		return False
+	try:
+		if db_result.size == 1:
+			value = db_result.iloc[0, 0]
+			return pd.notna(value) and float(value) == 0.0
+	except (ValueError, TypeError):
+		return False
+	return False
+
+
+def _extract_name_candidate(question: str) -> Optional[str]:
+	quoted = re.search(r"['\"]([^'\"]+)['\"]", question)
+	if quoted:
+		return quoted.group(1).strip()
+
+	match = re.search(
+		r"(?:ventas de|de la|del|de|por)\s+([\w\s\-\.]+)",
+		question,
+		flags=re.IGNORECASE,
+	)
+	if match:
+		candidate = match.group(1)
+		candidate = re.split(r"[\?\!\,\.;:]", candidate)[0].strip()
+		return candidate
+	return None
+
+
+def _build_like_pattern(name: str) -> Optional[str]:
+	tokens = re.findall(r"[A-Za-z0-9]+", name.lower())
+	if not tokens:
+		return None
+	parts = [token[:3] for token in tokens if len(token) >= 3]
+	if not parts:
+		parts = [tokens[0]]
+	return "%" + "%".join(parts) + "%"
+
+
+def _escape_sql_literal(value: str) -> str:
+	return value.replace("'", "''")
+
+
+def _find_name_suggestion(
+	*,
+	db_path: str,
+	schema: Dict[str, List[str]],
+	name: str,
+) -> Optional[str]:
+	pattern = _build_like_pattern(name)
+	if not pattern:
+		return None
+	pattern_sql = _escape_sql_literal(pattern)
+
+	for table, columns in schema.items():
+		lower_cols = [column.lower() for column in columns]
+		if "first_name" in lower_cols and "last_name" in lower_cols:
+			query = (
+				"SELECT DISTINCT first_name || ' ' || last_name AS full_name "
+				f"FROM {table} "
+				"WHERE LOWER(first_name || ' ' || last_name) "
+				f"LIKE LOWER('{pattern_sql}') "
+				"LIMIT 5"
+			)
+			result = execute_query(db_path, query)
+			if isinstance(result, pd.DataFrame) and not result.empty:
+				return str(result.iloc[0]["full_name"]).strip()
+
+	for table, columns in schema.items():
+		for column in columns:
+			if "name" not in column.lower():
+				continue
+			query = (
+				f"SELECT DISTINCT {column} AS name FROM {table} "
+				f"WHERE LOWER({column}) LIKE LOWER('{pattern_sql}') "
+				"LIMIT 5"
+			)
+			result = execute_query(db_path, query)
+			if isinstance(result, pd.DataFrame) and not result.empty:
+				return str(result.iloc[0]["name"]).strip()
+
+	return None
+
+
 def build_graph(
 	*,
 	sql_agent: Callable[[str], Any],
@@ -216,9 +310,48 @@ def build_graph(
 				f"Error: {state['error']}"
 			)
 		elif db_result is None:
-			answer = "No hay datos disponibles en el resultado."
+			answer = "No encontre datos para esa consulta."
 		elif isinstance(db_result, pd.DataFrame) and db_result.empty:
-			answer = "No hay datos disponibles en el resultado."
+			schema = get_schema(db_path)
+			candidate_name = _extract_name_candidate(question)
+			suggestion = None
+			if isinstance(schema, dict) and candidate_name:
+				suggestion = _find_name_suggestion(
+					db_path=db_path,
+					schema=schema,
+					name=candidate_name,
+				)
+			if candidate_name and suggestion and suggestion.lower() != candidate_name.lower():
+				answer = (
+					"No encontre resultados para "
+					f"{candidate_name}. Es posible que te refieras a {suggestion}. "
+					"Tienes opciones debajo para consultar su informacion."
+				)
+				suggestions = [f"Ver ventas de {suggestion}"]
+			elif candidate_name:
+				answer = f"No encontre resultados para {candidate_name}."
+			else:
+				answer = "No encontre resultados para esa consulta."
+		elif _is_zero_result(db_result):
+			schema = get_schema(db_path)
+			candidate_name = _extract_name_candidate(question)
+			suggestion = None
+			if isinstance(schema, dict) and candidate_name:
+				suggestion = _find_name_suggestion(
+					db_path=db_path,
+					schema=schema,
+					name=candidate_name,
+				)
+			if candidate_name and suggestion and suggestion.lower() != candidate_name.lower():
+				answer = (
+					"No encontre resultados para "
+					f"{candidate_name}. Es posible que te refieras a {suggestion}. "
+					"Tienes opciones debajo para consultar su informacion."
+				)
+				suggestions = [f"Ver ventas de {suggestion}"]
+			else:
+				prompt = _build_analyst_prompt(question, db_result)
+				answer = _call_agent(analyst_agent, prompt)
 		else:
 			prompt = _build_analyst_prompt(question, db_result)
 			answer = _call_agent(analyst_agent, prompt)
