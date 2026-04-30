@@ -6,9 +6,6 @@ env/
 # Variables de entorno
 .env
 
-# Base de datos local
-data/*.sqlite
-data/*.db
 
 # Python caches
 __pycache__/

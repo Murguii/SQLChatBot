@@ -1,47 +1,187 @@
-# SQLChatbot: Intelligent SQL Agent via Telegram
+# SQL Music Chatbot 🎵🤖
 
-## 👤 Author
-- **Name:** David Murguialday Osés
-- **Course:** Generative AI for Software Engineering
-- **Professor:** @juananpe
+**SQL Music Chatbot** es un asistente conversacional para bases de datos SQLite orientado a consultas musicales. Está diseñado para convertir lenguaje natural a SQL robusto, ejecutar consultas con seguridad y devolver explicaciones claras en un flujo **multiactor con LangGraph**. El objetivo principal es **resolver problemas reales de ingeniería de IA**: errores ortográficos, ambigüedades, consultas complejas y trazabilidad end-to-end.
 
 ---
 
-## 🎯 Project Overview
-**SQLChatbot** is a multi-agent system designed to bridge the gap between non-technical users and relational databases. Through a simple **Telegram bot interface**, users can query, analyze, and visualize data using natural language.
-
-The project goes beyond simple text-to-SQL conversion by implementing a **self-correcting agentic workflow** using LangGraph, ensuring that even if the AI generates an incorrect SQL query, it can fix itself before responding to the user.
-
-## 🛠️ Tech Stack & Key Concepts
-This project implements several advanced patterns discussed during the course:
-
-* **Orchestrator-Worker Pattern:** Based on the OpenAI Agents SDK, utilizing specialized agents for Data Retrieval (SQL), Data Analysis (Insights), and Visualization.
-* **LangGraph:** Manages the state and flow of the conversation. It specifically handles a **self-correction loop**: if a SQL execution fails, the error is fed back to the agent for an immediate retry.
-* **Telegram Bot API:** Provides a real-world interface for the end-user.
-* **Langfuse:** Integrated for full observability, tracking traces, token costs, and agent latency.
-* **SQL Skills:** Custom tools developed to allow the agent to inspect schemas and execute safe queries on a SQLite database.
-
-## 🤖 Agent Features
-1.  **Natural Language to SQL:** Converts user intent into precise SQL queries.
-2.  **Autonomous Self-Correction:** Detects SQL syntax or schema errors and iterates until a valid query is produced.
-3.  **Smart Follow-up Suggestions:** After each answer, a dedicated analyst agent suggests 2-3 relevant questions to help the user explore the data further.
-
-
-## 🏗️ Architecture
-The system follows a cyclic graph logic:
-1.  **User Input (Telegram)** -> Input Node.
-2.  **Schema Inspector** -> Agent learns the DB structure.
-3.  **SQL Generator** -> Agent writes the query.
-4.  **Validator/Executor** -> If it fails, it loops back to step 3 with the error log.
-5.  **Analyst** -> Generates insights and follow-up questions.
-6.  **Response** -> Results are sent back to Telegram.
-
-## 🚀 How to Run (Development)
-*(This section will be updated as the code is pushed)*
-1.  Clone the repository.
-2.  Install dependencies: `pip install -r requirements.txt`.
-3.  Set up environment variables (`OPENAI_API_KEY`, `TELEGRAM_TOKEN`, `LANGFUSE_KEYS`).
-4.  Run the main bot script: `python bot.py`.
+## ✨ Highlights
+- **Arquitectura de agentes** con tres nodos clave y un grafo de estados con autocorrección.
+- **Manejo inteligente de datos**: fuzzy matching y validación de existencia con lógica SQL.
+- **Telegram como frontend** con **Inline Keyboards** para sugerencias contextuales.
+- **Observabilidad** con Langfuse para auditoría de SQL, trazas y latencia.
 
 ---
-*Developed using GitHub Copilot as a primary coding assistant.*
+
+## 🧠 Arquitectura de Agentes (LangGraph)
+El bot usa LangGraph para orquestar un grafo de estados con tres nodos principales:
+
+| Nodo | Responsabilidad | Entradas | Salidas |
+| --- | --- | --- | --- |
+| `sql_generator` | Traduce lenguaje natural a SQL robusto usando `LOWER` y `LIKE` | Pregunta del usuario + esquema | SQL seguro y explicable |
+| `execute_sql` | Ejecuta SQL contra SQLite y captura errores | SQL | Resultado o error |
+| `analyst` | Interpreta resultados, explica y gestiona errores o sugerencias | Resultado + errores | Respuesta final + sugerencias |
+
+**Flujo resumido:**
+1. Usuario pregunta en Telegram.
+2. `sql_generator` crea la consulta SQL.
+3. `execute_sql` valida y ejecuta.
+4. `analyst` interpreta, explica y sugiere.
+
+---
+
+## 🧪 Manejo Inteligente de Datos (clave del proyecto)
+
+### ✅ Fuzzy Matching (tolerancia a errores ortográficos)
+El bot entiende errores de escritura aplicando lógica SQL con `LOWER` y `LIKE`, más una capa de razonamiento en `analyst` para sugerencias. Ejemplo real:
+
+**Entrada:**
+```text
+Ventas de Nirvna
+```
+
+**SQL aproximado (simplificado):**
+```sql
+SELECT artist_name
+FROM artists
+WHERE LOWER(artist_name) LIKE '%nirvna%'
+```
+
+**Salida esperada:**
+```text
+No encontré "Nirvna". ¿Quizás quisiste decir "Nirvana"?
+```
+
+> 💡 El analista combina coincidencias parciales con contexto de la pregunta para proponer correcciones útiles.
+
+### ✅ Validación de existencia (0 vs No hay registros)
+No es lo mismo que un artista exista pero tenga **0 ventas**, a que **no exista en la DB**. Implementamos una lógica de doble verificación cruzando resultados SQL con metadatos de tablas para evitar falsos negativos (por ejemplo, "Bad Bunny"):
+
+| Caso | Resultado | Interpretación |
+| --- | --- | --- |
+| Artista existe + ventas = 0 | `0` | El artista existe pero no tiene ventas registradas |
+| Artista no existe | `No hay registros` | No hay coincidencias en la base |
+
+**Estrategia:**
+1. Consulta de existencia del artista (por nombre normalizado).
+2. Verificación con metadatos de tablas relevantes para confirmar presencia.
+3. Consulta de ventas si existe.
+4. El `analyst` decide el mensaje final y evita falsas negativas.
+
+---
+
+## 💬 Interfaz y UX
+
+- **Telegram** como frontend conversacional.
+- **Inline Keyboards** para sugerencias dinámicas y desambiguación.
+- Respuestas diseñadas para ser **interpretables** y **orientadas a decisiones**.
+
+Ejemplo de teclado:
+```text
+¿Te refieres a?
+[ Nirvana ]  [ Nirvana (Unplugged) ]  [ Nirvana (Remastered) ]
+```
+
+---
+
+## 🧩 Portabilidad (Schema-Agnostic)
+El diseño es **schema-agnostic**. El bot extrae el DDL dinámicamente desde SQLite, por lo que `sql_generator` se adapta a cualquier esquema con cambios mínimos en el prompt del sistema. Esto permite migrar entre bases SQLite sin reescribir la lógica del grafo.
+
+## 🔭 Observabilidad
+La integración con **Langfuse** permite:
+
+- 📌 Trazado completo del flujo de agentes.
+- 🧾 Auditoría de SQL generado.
+- ⏱️ Monitoreo de latencia y costos por consulta.
+- 🧪 Debugging post-mortem con trazas por usuario.
+
+---
+
+## 🖼️ Recursos visuales
+![Interacción en Telegram (Demo)](./assets/telegram_demo.png)
+![Visualización del Grafo de Estados (LangGraph)](./assets/langgraph_state_graph.png)
+![Traza de observabilidad (Langfuse)](./assets/langfuse_trace.png)
+
+## 🧾 Ejemplos de consultas
+
+### Nivel simple
+```text
+¿Qué álbumes tiene Radiohead?
+```
+
+### Nivel complejo (JOINs)
+```text
+¿Qué canciones de Rock ha comprado Jordan Lee?
+```
+
+### Gestión de errores (fuzzy matching)
+```text
+Ventas de Flitwood Mac
+```
+
+---
+
+## ⚙️ Guía de instalación
+
+### 1) Crear entorno virtual
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+### 2) Instalar dependencias
+```powershell
+pip install -r requirements.txt
+```
+
+### 3) Configurar variables de entorno
+Crea un archivo `.env` con las siguientes variables:
+
+```env
+TELEGRAM_BOT_TOKEN=your_telegram_token
+OPENROUTER_API_KEY=your_openrouter_key
+LANGFUSE_PUBLIC_KEY=your_langfuse_public_key
+LANGFUSE_SECRET_KEY=your_langfuse_secret_key
+LANGFUSE_HOST=https://cloud.langfuse.com
+```
+
+### 4) Ejecutar el bot
+```powershell
+python -m src.bot
+```
+
+---
+
+## 📁 Estructura del proyecto
+```text
+main.py
+src/
+	agents.py
+	bot.py
+	graph.py
+	init_db.py
+	tools.py
+data/
+	music.db
+requirements.txt
+```
+
+---
+
+## ✅ Estado del proyecto
+Proyecto funcional con foco en **robustez**, **observabilidad** y **UX conversacional**. Los mayores retos resueltos incluyen:
+
+- Manejo de errores ortográficos sin degradar precisión.
+- Detección correcta de inexistencia vs ausencia de ventas.
+- Auditoría completa de SQL y latencia con Langfuse.
+- Ejecución inmediata gracias a `data/music.db` incluido en el repo tras configurar las API Keys.
+
+---
+
+## 👤 Autor
+- **Nombre:** David Murguialday Osés
+- **Curso:** Generative AI for Software Engineering
+- **Profesor:** @juananpe
+
+---
+
+*Desarrollado con GitHub Copilot como asistente principal.*
