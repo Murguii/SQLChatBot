@@ -44,8 +44,7 @@ def _init_langfuse() -> Optional[Any]:
 
 def _build_openrouter_agent(
 	system_prompt: str,
-	*,
-	name: str,
+	model: str,
 	langfuse: Optional[Any],
 ) -> Any:
 	try:
@@ -64,12 +63,12 @@ def _build_openrouter_agent(
 		api_key=api_key,
 		base_url=os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
 	)
-	model = os.getenv("OPENROUTER_MODEL", "openrouter/auto")
+	model_name = model or os.getenv("OPENROUTER_MODEL", "openrouter/auto")
 
 	def _agent(prompt: str) -> str:
 		if langfuse is None:
 			response = client.responses.create(
-				model=model,
+				model=model_name,
 				input=[
 					{"role": "system", "content": system_prompt},
 					{"role": "user", "content": prompt},
@@ -79,12 +78,12 @@ def _build_openrouter_agent(
 
 		with langfuse.start_as_current_observation(
 			as_type="generation",
-			name=name,
-			model=model,
+			name=model_name,
+			model=model_name,
 			input=prompt,
 		) as generation:
 			response = client.responses.create(
-				model=model,
+				model=model_name,
 				input=[
 					{"role": "system", "content": system_prompt},
 					{"role": "user", "content": prompt},
@@ -228,20 +227,26 @@ def main() -> None:
 	langfuse = _init_langfuse()
 	session_id = os.getenv("LANGFUSE_SESSION_ID") or f"telegram-{uuid.uuid4().hex[:8]}"
 
+	model_name = os.getenv("OPENROUTER_MODEL", "openrouter/auto")
 	sql_agent = _build_openrouter_agent(
-		"You are a SQL generator. Return only the SQL query for the user question. "
-		"Before generating SQL, decide whether the provided name looks like a customer_name in sales "
-		"or a name in artists. If the user asks for 'ventas de [Nombre]', check customers first. "
-		"For name searches, always use LOWER(column) LIKE LOWER('%value%') instead of '='. "
-		"Example: WHERE LOWER(a.name) LIKE LOWER('%Fleetwood Mac%'). "
-		"Use COALESCE(SUM(...), 0) for sums that could be NULL.",
-		name="sql_generator",
-		langfuse=langfuse,
+		(
+			"You are a SQL generator. Return only the SQL query for the user question. "
+			"Before generating SQL, decide whether the provided name looks like a customer_name in sales "
+			"or a name in artists. If the user asks for 'ventas de [Nombre]', check customers first. "
+			"For name searches, always use LOWER(column) LIKE LOWER('%value%') instead of '='. "
+			"Example: WHERE LOWER(a.name) LIKE LOWER('%Fleetwood Mac%'). "
+			"Use COALESCE(SUM(...), 0) for sums that could be NULL. "
+			"If the question is about sales for an artist or customer, return two columns: "
+			"the requested numeric value and the real matched name from artists or sales. "
+			"If the name is not found, return NULL in the name column."
+		),
+		model_name,
+		langfuse,
 	)
 	analyst_agent = _build_openrouter_agent(
 		"You are a data analyst. Answer the user concisely.",
-		name="analyst",
-		langfuse=langfuse,
+		model_name,
+		langfuse,
 	)
 
 	graph = build_graph(

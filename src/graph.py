@@ -82,6 +82,9 @@ def _build_analyst_prompt(question: str, db_result: Union[pd.DataFrame, str]) ->
 			"'No encontre resultados para [error]. Es posible que te refieras a [correcto]. "
 			"Tienes opciones debajo para consultar su informacion.'",
 			"3) If the term is correct and the result is 0, then say it is 0.",
+			"If a sales query includes a name column in the result and that name is NULL, "
+			"you must say there are no records for that name. Do not say it sold 0.",
+			"Use the result columns to infer missing joins or missing names.",
 			"Do not ask open questions or request confirmation.",
 			"Do not assume results apply to the corrected term.",
 			"Your response must contain ONLY the answer to the user's question.",
@@ -267,6 +270,46 @@ def _find_name_suggestion(
 	return None
 
 
+def _name_exists(
+	*,
+	db_path: str,
+	schema: Dict[str, List[str]],
+	name: str,
+) -> bool:
+	pattern = f"%{name.strip()}%"
+	pattern_sql = _escape_sql_literal(pattern)
+
+	for table, columns in schema.items():
+		lower_cols = [column.lower() for column in columns]
+		if "first_name" in lower_cols and "last_name" in lower_cols:
+			query = (
+				"SELECT 1 FROM "
+				f"{table} "
+				"WHERE LOWER(first_name || ' ' || last_name) "
+				f"LIKE LOWER('{pattern_sql}') "
+				"LIMIT 1"
+			)
+			result = execute_query(db_path, query)
+			if isinstance(result, pd.DataFrame) and not result.empty:
+				return True
+
+	for table, columns in schema.items():
+		for column in columns:
+			if "name" not in column.lower():
+				continue
+			query = (
+				"SELECT 1 FROM "
+				f"{table} "
+				f"WHERE LOWER({column}) LIKE LOWER('{pattern_sql}') "
+				"LIMIT 1"
+			)
+			result = execute_query(db_path, query)
+			if isinstance(result, pd.DataFrame) and not result.empty:
+				return True
+
+	return False
+
+
 def build_graph(
 	*,
 	sql_agent: Callable[[str], Any],
@@ -349,6 +392,15 @@ def build_graph(
 					"Tienes opciones debajo para consultar su informacion."
 				)
 				suggestions = [f"Ver ventas de {suggestion}"]
+			elif isinstance(schema, dict) and candidate_name:
+				if not _name_exists(db_path=db_path, schema=schema, name=candidate_name):
+					answer = (
+						"No tengo registros de "
+						f"{candidate_name} en mi base de datos actual."
+					)
+				else:
+					prompt = _build_analyst_prompt(question, db_result)
+					answer = _call_agent(analyst_agent, prompt)
 			else:
 				prompt = _build_analyst_prompt(question, db_result)
 				answer = _call_agent(analyst_agent, prompt)

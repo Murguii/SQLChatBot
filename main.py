@@ -191,6 +191,9 @@ def main() -> None:
 		"For name searches, always use LOWER(column) LIKE LOWER('%value%') instead of '='. "
 		"Example: WHERE LOWER(a.name) LIKE LOWER('%Fleetwood Mac%'). "
 		"Use COALESCE(SUM(...), 0) for sums that could be NULL.",
+		"If the question is about sales for an artist or customer, return two columns: "
+		"the requested numeric value and the real matched name from artists or sales. "
+		"If the name is not found, return NULL in the name column.",
 		name="sql_generator",
 		langfuse=langfuse,
 	)
