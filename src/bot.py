@@ -229,7 +229,11 @@ def main() -> None:
 	session_id = os.getenv("LANGFUSE_SESSION_ID") or f"telegram-{uuid.uuid4().hex[:8]}"
 
 	sql_agent = _build_openrouter_agent(
-		"You are a SQL generator. Return only the SQL query for the user question.",
+		"You are a SQL generator. Return only the SQL query for the user question. "
+		"Before generating SQL, decide whether the provided name looks like a customer_name in sales "
+		"or a name in artists. If the user asks for 'ventas de [Nombre]', check customers first. "
+		"Always use LIKE with % wildcards for artist/customer names (e.g., WHERE a.name LIKE '%Fleetwood Mac%'). "
+		"Use COALESCE(SUM(...), 0) for sums that could be NULL.",
 		name="sql_generator",
 		langfuse=langfuse,
 	)
