@@ -145,7 +145,7 @@ pip install -r requirements.txt
 Create a `.env` file with the following variables:
 
 ```env
-TELEGRAM_BOT_TOKEN=your_telegram_token
+TELEGRAM_TOKEN=your_telegram_token
 OPENROUTER_API_KEY=your_openrouter_key
 LANGFUSE_PUBLIC_KEY=your_langfuse_public_key
 LANGFUSE_SECRET_KEY=your_langfuse_secret_key
@@ -154,7 +154,7 @@ LANGFUSE_HOST=https://cloud.langfuse.com
 
 ### 4) Run the bot
 ```powershell
-python -m src.bot
+python main.py
 ```
 
 ---
