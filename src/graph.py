@@ -423,24 +423,6 @@ def build_graph(
 		elif db_result is None:
 			answer = "No encontre datos para esa consulta."
 		elif isinstance(db_result, pd.DataFrame) and db_result.empty:
-			diagnostic_query = (
-				"SELECT DISTINCT customer_name "
-				"FROM sales "
-				"WHERE customer_name LIKE '%Jordan%' "
-				"LIMIT 5"
-			)
-			diagnostic_result = execute_query(db_path, diagnostic_query)
-			if isinstance(diagnostic_result, pd.DataFrame) and not diagnostic_result.empty:
-				customer_name = str(diagnostic_result.iloc[0]["customer_name"]).strip()
-				answer = (
-					"No he encontrado canciones de Rock para Jordan Lee, "
-					"pero he visto que existen registros para "
-					f"{customer_name}. "
-					"Quieres ver todas sus compras sin filtrar por genero?"
-				)
-				messages = list(state.get("messages", []))
-				messages.append({"role": "assistant", "content": answer})
-				return {"messages": messages, "suggestions": []}
 			schema = get_schema(db_path)
 			candidate_name = _extract_name_candidate(question)
 			suggestion = None

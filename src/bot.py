@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 
+from src.agents import create_analyst_agent, create_sql_agent
 from src.graph import build_graph
 
 
@@ -40,60 +41,6 @@ def _init_langfuse() -> Optional[Any]:
 		return None
 
 	return get_client()
-
-
-def _build_openrouter_agent(
-	system_prompt: str,
-	model: str,
-	langfuse: Optional[Any],
-) -> Any:
-	try:
-		from openai import OpenAI
-	except Exception:
-		def _fallback(_: str) -> str:
-			return "SELECT 1;"
-
-		return _fallback
-
-	api_key = os.getenv("OPENROUTER_API_KEY")
-	if not api_key:
-		raise RuntimeError("Missing OPENROUTER_API_KEY. Set it in your environment or .env file.")
-
-	client = OpenAI(
-		api_key=api_key,
-		base_url=os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
-	)
-	model_name = model or os.getenv("OPENROUTER_MODEL", "openrouter/auto")
-
-	def _agent(prompt: str) -> str:
-		if langfuse is None:
-			response = client.responses.create(
-				model=model_name,
-				input=[
-					{"role": "system", "content": system_prompt},
-					{"role": "user", "content": prompt},
-				],
-			)
-			return response.output_text.strip()
-
-		with langfuse.start_as_current_observation(
-			as_type="generation",
-			name=model_name,
-			model=model_name,
-			input=prompt,
-		) as generation:
-			response = client.responses.create(
-				model=model_name,
-				input=[
-					{"role": "system", "content": system_prompt},
-					{"role": "user", "content": prompt},
-				],
-			)
-			output_text = response.output_text.strip()
-			generation.update(output=output_text)
-			return output_text
-
-	return _agent
 
 
 def _run_turn(
@@ -228,26 +175,8 @@ def main() -> None:
 	session_id = os.getenv("LANGFUSE_SESSION_ID") or f"telegram-{uuid.uuid4().hex[:8]}"
 
 	model_name = os.getenv("OPENROUTER_MODEL", "openrouter/auto")
-	sql_agent = _build_openrouter_agent(
-		(
-			"You are a SQL generator. Return only the SQL query for the user question. "
-			"Before generating SQL, decide whether the provided name looks like a customer_name in sales "
-			"or a name in artists. If the user asks for 'ventas de [Nombre]', check customers first. "
-			"For name searches, always use LOWER(column) LIKE LOWER('%value%') instead of '='. "
-			"Example: WHERE LOWER(a.name) LIKE LOWER('%Fleetwood Mac%'). "
-			"Use COALESCE(SUM(...), 0) for sums that could be NULL. "
-			"If the question is about sales for an artist or customer, return two columns: "
-			"the requested numeric value and the real matched name from artists or sales. "
-			"If the name is not found, return NULL in the name column."
-		),
-		model_name,
-		langfuse,
-	)
-	analyst_agent = _build_openrouter_agent(
-		"You are a data analyst. Answer the user concisely.",
-		model_name,
-		langfuse,
-	)
+	sql_agent = create_sql_agent(model_name, langfuse)
+	analyst_agent = create_analyst_agent(model_name, langfuse)
 
 	graph = build_graph(
 		sql_agent=sql_agent,
